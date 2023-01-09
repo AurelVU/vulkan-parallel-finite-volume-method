@@ -2,16 +2,53 @@
 
 #include "vulkan_helpers.h"
 
+struct Params {
+    float T0;
+    float Tb;
+    float dt;
+    float h;
+    float k;
+    float dz;
+
+    float kL;
+    float kR;
+    float kU;
+    float kD;
+};
+
+struct Flux {
+    float left;
+    float right;
+    float top;
+    float bottom;
+    float left_edge;
+    float right_edge;
+    float top_edge;
+    float bottom_edge;
+
+    float C;
+    float CLgran;
+    float CRgran;
+    float CUgran;
+    float DUgran;
+    float CLUgran;
+    float CRUgran;
+    float CLDgran;
+    float DRUgran;
+};
+
 /// doc me
 struct ExampleFilter {
 	static constexpr auto NumDescriptors = uint32_t(2); ///< number of binding descriptors (array input-output parameters)
-	
+
 	/// C++ mirror of the shader push constants interface
 	struct PushParams {
 		uint32_t width;  ///< frame width
 		uint32_t height; ///< frame height
-		float a;         ///< saxpy (\$ y = y + ax \$) scaling factor
+        Params params;
+        Flux flux;
 	};
+
 	
 public: // data
 	vk::Instance instance;              ///< Vulkan instance
@@ -38,8 +75,8 @@ public:
 	auto run() const-> void;
 	auto operator()(vk::Buffer& out, const vk::Buffer& in, const PushParams& p ) const-> void;
 private: // helpers		
-	static auto createInstance(const std::vector<const char*> layers
-	                           , const std::vector<const char*> extensions
+	static auto createInstance(const std::vector<const char*>& layers
+	                           , const std::vector<const char*>& extensions
 	                           )-> vk::Instance;
 	
 	static auto createDescriptorSetLayout(const vk::Device& device)-> vk::DescriptorSetLayout;

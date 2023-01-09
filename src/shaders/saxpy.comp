@@ -1,21 +1,89 @@
 #version 440
 
+int index(int i, int j, int m) {
+   return i * m + j;
+}
+
+struct Params {
+   float T0;
+   float Tb;
+   float dt;
+   float h;
+   float k;
+   float dz;
+
+   float kL;
+   float kR;
+   float kU;
+   float kD;
+};
+
+struct Flux {
+   float left;
+   float right;
+   float top;
+   float bottom;
+   float left_edge;
+   float right_edge;
+   float top_edge;
+   float bottom_edge;
+
+   float C;
+   float CLgran;
+   float CRgran;
+   float CUgran;
+   float DUgran;
+   float CLUgran;
+   float CRUgran;
+   float CLDgran;
+   float DRUgran;
+};
+
 layout(local_size_x_id = 0, local_size_y_id = 1) in; // workgroup size defined with specialization constants. On cpp side there is associated SpecializationInfo entry in PipelineShaderStageCreateInfo
 layout(push_constant) uniform Parameters {           // specify push constants. on cpp side its layout is fixed at PipelineLayout, and values are provided via vk::CommandBuffer::pushConstants()
-   uint Width;
-   uint Height;
-	float a;
+   int Width;
+   int Height;
+   Params params;
+   Flux flux;
 } params;
 
-layout(std430, binding = 0) buffer lay0 { float arr_y[]; };
-layout(std430, binding = 1) buffer lay1 { float arr_x[]; };
+layout(std430, binding = 0) buffer lay0 { float T_new[]; };
+layout(std430, binding = 1) buffer lay1 { float T[]; };
 
 void main(){
    // drop threads outside the buffer dimensions.
    if(params.Width <= gl_GlobalInvocationID.x || params.Height <= gl_GlobalInvocationID.y){
       return;
    }
-   const uint id = params.Width*gl_GlobalInvocationID.y + gl_GlobalInvocationID.x; // current offset
+//   const uint id = params.Width*gl_GlobalInvocationID.y + gl_GlobalInvocationID.x; // current offset
+   int i = int(gl_GlobalInvocationID.x);
+   int j = int(gl_GlobalInvocationID.y);
 
-   arr_y[id] += params.a*arr_x[id]; // saxpy
+   int n = params.Width;
+   int m = params.Height;
+   Params param = params.params;
+   Flux flux = params.flux;
+   int mpi_rank = 0;
+   int mpi_n = 1;
+
+   int global_i = i;
+   int current_n = mpi_n == -1 ? n : mpi_n;
+
+   float left_flux = 0;
+   float right_flux = 0;
+   float top_flux = 0;
+   float bottom_flux = 0;
+
+
+   if (global_i == 0) left_flux = flux.left_edge * (param.Tb - T[index(i, j, m)]);
+   else left_flux = flux.left * (T[index(i - 1, j, m)] - T[index(i, j, m)]);
+   if (global_i == n - 1) right_flux = flux.right_edge * (param.T0 - T[index(i, j, m)]);
+   else right_flux = flux.right * (T[index(i + 1, j, m)] - T[index(i, j, m)]);
+
+   if (j == 0) bottom_flux = flux.bottom_edge * (param.T0 - T[index(i, j, m)]);
+   else bottom_flux = flux.bottom * (T[index(i, j - 1, m)] - T[index(i, j, m)]);
+   if (j == m - 1) top_flux = flux.top_edge * (param.T0 - T[index(i, j, m)]);
+   else top_flux = flux.top * (T[index(i, j + 1, m)] - T[index(i, j, m)]);
+
+   T_new[index(i, j, m)] = T[index(i, j, m)] - param.dt * param.h * param.h * param.dz * (left_flux + right_flux + top_flux + bottom_flux);
 }
